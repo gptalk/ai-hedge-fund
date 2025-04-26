@@ -23,33 +23,51 @@ _cache = get_cache()
 
 
 def get_prices(ticker: str, start_date: str, end_date: str) -> list[Price]:
-    """Fetch price data from cache or API."""
-    # Check cache first
+    """
+    Fetch price data from cache or API.
+
+    Args:
+        ticker (str): 股票代码。
+        start_date (str): 开始日期，格式为字符串。
+        end_date (str): 结束日期，格式为字符串。
+
+    Returns:
+        list[Price]: 包含 Price 对象的列表，代表获取到的价格数据。
+    """
+    # 首先检查缓存中是否存在该股票的价格数据
     if cached_data := _cache.get_prices(ticker):
-        # Filter cached data by date range and convert to Price objects
+        # 过滤缓存数据，只保留日期在指定范围内的数据，并转换为 Price 对象
         filtered_data = [Price(**price) for price in cached_data if start_date <= price["time"] <= end_date]
+        # 若过滤后的数据不为空，则直接返回
         if filtered_data:
             return filtered_data
 
-    # If not in cache or no data in range, fetch from API
+    # 若缓存中没有数据或指定日期范围内无数据，则从 API 获取数据
     headers = {}
+    # 若环境变量中存在金融数据集 API 密钥，则添加到请求头中
     if api_key := os.environ.get("FINANCIAL_DATASETS_API_KEY"):
         headers["X-API-KEY"] = api_key
 
+    # 构建请求 URL，指定股票代码、时间间隔、开始日期和结束日期
     url = f"https://api.financialdatasets.ai/prices/?ticker={ticker}&interval=day&interval_multiplier=1&start_date={start_date}&end_date={end_date}"
+    # 发送 GET 请求获取价格数据
     response = requests.get(url, headers=headers)
+    # 若请求状态码不是 200，表示请求失败，抛出异常
     if response.status_code != 200:
         raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
 
-    # Parse response with Pydantic model
+    # 使用 Pydantic 模型解析响应数据
     price_response = PriceResponse(**response.json())
+    # 从解析后的响应中提取价格数据
     prices = price_response.prices
 
+    # 若获取到的价格数据为空，则返回空列表
     if not prices:
         return []
 
-    # Cache the results as dicts
+    # 将获取到的价格数据以字典形式缓存起来
     _cache.set_prices(ticker, [p.model_dump() for p in prices])
+    # 返回获取到的价格数据
     return prices
 
 

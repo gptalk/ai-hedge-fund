@@ -81,33 +81,53 @@ class Backtester:
         Execute trades with support for both long and short positions.
         `quantity` is the number of shares the agent wants to buy/sell/short/cover.
         We will only trade integer shares to keep it simple.
+
+        Args:
+            ticker (str): 股票代码。
+            action (str): 交易动作，可选值为 "buy"（买入）、"sell"（卖出）、"short"（卖空）、"cover"（平仓）。
+            quantity (float): 代理想要交易的股票数量。
+            current_price (float): 当前股票价格。
+
+        Returns:
+            int: 实际执行的交易股票数量。
         """
+        # 若交易数量小于等于 0，不进行交易，直接返回 0
         if quantity <= 0:
             return 0
 
+        # 将交易数量转换为整数，确保只交易整数股数
         quantity = int(quantity)  # force integer shares
+        # 获取该股票在投资组合中的持仓信息
         position = self.portfolio["positions"][ticker]
 
+        # 处理买入操作
         if action == "buy":
+            # 计算买入所需成本
             cost = quantity * current_price
+            # 若成本不超过可用现金，则执行买入操作
             if cost <= self.portfolio["cash"]:
-                # Weighted average cost basis for the new total
+                # 计算新的加权平均成本基础
                 old_shares = position["long"]
                 old_cost_basis = position["long_cost_basis"]
                 new_shares = quantity
                 total_shares = old_shares + new_shares
 
+                # 若总股数大于 0，更新成本基础
                 if total_shares > 0:
                     total_old_cost = old_cost_basis * old_shares
                     total_new_cost = cost
                     position["long_cost_basis"] = (total_old_cost + total_new_cost) / total_shares
 
+                # 增加多头持仓数量
                 position["long"] += quantity
+                # 扣除相应现金
                 self.portfolio["cash"] -= cost
+                # 返回实际买入的股数
                 return quantity
             else:
-                # Calculate maximum affordable quantity
+                # 计算最大可购买数量
                 max_quantity = int(self.portfolio["cash"] / current_price)
+                # 若最大可购买数量大于 0，则执行买入操作
                 if max_quantity > 0:
                     cost = max_quantity * current_price
                     old_shares = position["long"]
@@ -122,25 +142,35 @@ class Backtester:
                     position["long"] += max_quantity
                     self.portfolio["cash"] -= cost
                     return max_quantity
+                # 若无法购买，返回 0
                 return 0
 
+        # 处理卖出操作
         elif action == "sell":
-            # You can only sell as many as you own
+            # 确保卖出数量不超过持仓数量
             quantity = min(quantity, position["long"])
+            # 若卖出数量大于 0，则执行卖出操作
             if quantity > 0:
-                # Realized gain/loss using average cost basis
+                # 计算平均每股成本，若持仓为 0 则成本为 0
                 avg_cost_per_share = position["long_cost_basis"] if position["long"] > 0 else 0
+                # 计算实现的收益或损失
                 realized_gain = (current_price - avg_cost_per_share) * quantity
+                # 更新投资组合的已实现收益
                 self.portfolio["realized_gains"][ticker]["long"] += realized_gain
 
+                # 减少多头持仓数量
                 position["long"] -= quantity
+                # 增加相应现金
                 self.portfolio["cash"] += quantity * current_price
 
+                # 若多头持仓为 0，重置成本基础
                 if position["long"] == 0:
                     position["long_cost_basis"] = 0.0
 
+                # 返回实际卖出的股数
                 return quantity
 
+        # 处理卖空操作
         elif action == "short":
             """
             Typical short sale flow:
@@ -148,10 +178,13 @@ class Backtester:
               2) Post margin_required = proceeds * margin_ratio
               3) Net effect on cash = +proceeds - margin_required
             """
+            # 计算卖空所得
             proceeds = current_price * quantity
+            # 计算所需保证金
             margin_required = proceeds * self.portfolio["margin_requirement"]
+            # 若保证金不超过可用现金，则执行卖空操作
             if margin_required <= self.portfolio["cash"]:
-                # Weighted average short cost basis
+                # 计算新的加权平均卖空成本基础
                 old_short_shares = position["short"]
                 old_cost_basis = position["short_cost_basis"]
                 new_shares = quantity
@@ -162,24 +195,27 @@ class Backtester:
                     total_new_cost = current_price * new_shares
                     position["short_cost_basis"] = (total_old_cost + total_new_cost) / total_shares
 
+                # 增加空头持仓数量
                 position["short"] += quantity
 
-                # Update margin usage
+                # 更新保证金使用情况
                 position["short_margin_used"] += margin_required
                 self.portfolio["margin_used"] += margin_required
 
-                # Increase cash by proceeds, then subtract the required margin
+                # 增加现金（卖空所得），再扣除所需保证金
                 self.portfolio["cash"] += proceeds
                 self.portfolio["cash"] -= margin_required
+                # 返回实际卖空的股数
                 return quantity
             else:
-                # Calculate maximum shortable quantity
+                # 计算最大可卖空数量
                 margin_ratio = self.portfolio["margin_requirement"]
                 if margin_ratio > 0:
                     max_quantity = int(self.portfolio["cash"] / (current_price * margin_ratio))
                 else:
                     max_quantity = 0
 
+                # 若最大可卖空数量大于 0，则执行卖空操作
                 if max_quantity > 0:
                     proceeds = current_price * max_quantity
                     margin_required = proceeds * margin_ratio
@@ -200,8 +236,10 @@ class Backtester:
                     self.portfolio["cash"] += proceeds
                     self.portfolio["cash"] -= margin_required
                     return max_quantity
+                # 若无法卖空，返回 0
                 return 0
 
+        # 处理平仓操作
         elif action == "cover":
             """
             When covering shares:
@@ -209,35 +247,49 @@ class Backtester:
               2) Release a proportional share of the margin
               3) Net effect on cash = -cover_cost + released_margin
             """
+            # 确保平仓数量不超过空头持仓数量
             quantity = min(quantity, position["short"])
+            # 若平仓数量大于 0，则执行平仓操作
             if quantity > 0:
+                # 计算平仓成本
                 cover_cost = quantity * current_price
+                # 计算平均卖空价格，若空头持仓为 0 则价格为 0
                 avg_short_price = position["short_cost_basis"] if position["short"] > 0 else 0
+                # 计算实现的收益或损失
                 realized_gain = (avg_short_price - current_price) * quantity
 
+                # 计算应释放的保证金比例
                 if position["short"] > 0:
                     portion = quantity / position["short"]
                 else:
                     portion = 1.0
 
+                # 计算应释放的保证金金额
                 margin_to_release = portion * position["short_margin_used"]
 
+                # 减少空头持仓数量
                 position["short"] -= quantity
+                # 减少空头保证金使用量
                 position["short_margin_used"] -= margin_to_release
+                # 减少投资组合的总保证金使用量
                 self.portfolio["margin_used"] -= margin_to_release
 
-                # Pay the cost to cover, but get back the released margin
+                # 增加现金（释放的保证金），再扣除平仓成本
                 self.portfolio["cash"] += margin_to_release
                 self.portfolio["cash"] -= cover_cost
 
+                # 更新投资组合的已实现收益
                 self.portfolio["realized_gains"][ticker]["short"] += realized_gain
 
+                # 若空头持仓为 0，重置成本基础和保证金使用量
                 if position["short"] == 0:
                     position["short_cost_basis"] = 0.0
                     position["short_margin_used"] = 0.0
 
+                # 返回实际平仓的股数
                 return quantity
 
+        # 若交易动作无效，返回 0
         return 0
 
     def calculate_portfolio_value(self, current_prices):
@@ -264,25 +316,33 @@ class Backtester:
         return total_value
 
     def prefetch_data(self):
-        """Pre-fetch all data needed for the backtest period."""
+        """
+        Pre-fetch all data needed for the backtest period.
+        预获取回测期间所需的所有数据。
+        """
         print("\nPre-fetching data for the entire backtest period...")
 
         # Convert end_date string to datetime, fetch up to 1 year before
+        # 将结束日期字符串转换为 datetime 对象，获取截至结束日期前一年的数据
         end_date_dt = datetime.strptime(self.end_date, "%Y-%m-%d")
         start_date_dt = end_date_dt - relativedelta(years=1)
         start_date_str = start_date_dt.strftime("%Y-%m-%d")
 
         for ticker in self.tickers:
             # Fetch price data for the entire period, plus 1 year
+            # 获取整个回测期间及前一年的价格数据
             get_prices(ticker, start_date_str, self.end_date)
 
             # Fetch financial metrics
+            # 获取财务指标，最多获取 10 条记录
             get_financial_metrics(ticker, self.end_date, limit=10)
 
             # Fetch insider trades
+            # 获取内幕交易数据，从回测开始日期到结束日期，最多获取 1000 条记录
             get_insider_trades(ticker, self.end_date, start_date=self.start_date, limit=1000)
 
             # Fetch company news
+            # 获取公司新闻，从回测开始日期到结束日期，最多获取 1000 条记录
             get_company_news(ticker, self.end_date, start_date=self.start_date, limit=1000)
 
         print("Data pre-fetch complete.")
