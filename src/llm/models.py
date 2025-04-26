@@ -131,7 +131,8 @@ OLLAMA_MODELS = [
     ),
     LLMModel(
         display_name="[ollama] qwen2.5 (7B)",
-        model_name="qwen2.5",
+        # display_name="[ollama] qwn2.5:latest",
+        model_name="qwen2.5:latest",
         provider=ModelProvider.OLLAMA
     ),
     LLMModel(
@@ -159,6 +160,11 @@ OLLAMA_MODELS = [
         model_name="qwen2.5:32b",
         provider=ModelProvider.OLLAMA
     ),
+    LLMModel(
+        display_name="[ollama] qwq:latest",
+        model_name="qwq:latest",
+        provider=ModelProvider.OLLAMA
+    ),    
     LLMModel(
         display_name="[ollama] llama-3.3 (70B)",
         model_name="llama3.3:70b-instruct-q4_0",
