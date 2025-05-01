@@ -1,0 +1,18 @@
+# This file is used to install the required packages for the project.
+langchain
+langchain-anthropic
+langchain-groq
+langchain-openai
+langchain-deepseek
+langchain-ollama
+langgraph
+pandas
+numpy
+python-dotenv
+matplotlib
+tabulate
+colorama
+questionary
+rich
+langchain-google-genai
+
