@@ -51,7 +51,7 @@ def get_prices(ticker: str, start_date: str, end_date: str) -> list[Price]:
     # 构建请求 URL，指定股票代码、时间间隔、开始日期和结束日期
     url = f"https://api.financialdatasets.ai/prices/?ticker={ticker}&interval=day&interval_multiplier=1&start_date={start_date}&end_date={end_date}"
     # 发送 GET 请求获取价格数据
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=10)
     # 若请求状态码不是 200，表示请求失败，抛出异常
     if response.status_code != 200:
         raise Exception(f"Error fetching data: {ticker} - {response.status_code} - {response.text}")
